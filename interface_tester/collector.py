@@ -28,6 +28,7 @@ from interface_tester.schema_base import DataBagSchema
 
 logger = logging.getLogger("interface_tests_checker")
 
+_DEFAULT_TESTS_DIR = "interface_tests"
 _NotFound = object()
 
 
@@ -224,10 +225,12 @@ def _scrape_module_for_tests(module: types.ModuleType) -> List[Callable[[None], 
     return tests
 
 
-def _gather_test_cases_for_version(version_dir: Path, interface_name: str, version: int):
+def _gather_test_cases_for_version(
+    version_dir: Path, interface_name: str, version: int, *, tests_dir: str = _DEFAULT_TESTS_DIR
+):
     """Collect interface test cases from a directory containing an interface version spec."""
 
-    interface_tests_dir = version_dir / "interface_tests"
+    interface_tests_dir = version_dir / tests_dir
 
     provider_test_cases = []
     requirer_test_cases = []
@@ -261,7 +264,7 @@ def _gather_test_cases_for_version(version_dir: Path, interface_name: str, versi
 
 
 def gather_test_spec_for_version(
-    version_dir: Path, interface_name: str, version: int
+    version_dir: Path, interface_name: str, version: int, *, tests_dir: str = _DEFAULT_TESTS_DIR
 ) -> InterfaceTestSpec:
     """Collect interface tests from an interface/version subdirectory.
 
@@ -270,7 +273,7 @@ def gather_test_spec_for_version(
     """
 
     provider_test_cases, requirer_test_cases = _gather_test_cases_for_version(
-        version_dir, interface_name, version
+        version_dir, interface_name, version, tests_dir=tests_dir
     )
     schemas = get_schemas(version_dir / "schema.py")
     charms = _gather_charms_for_version(version_dir)
@@ -291,7 +294,7 @@ def gather_test_spec_for_version(
 
 
 def _gather_tests_for_interface(
-    interface_dir: Path, interface_name: str
+    interface_dir: Path, interface_name: str, *, tests_dir: str = _DEFAULT_TESTS_DIR
 ) -> Dict[str, InterfaceTestSpec]:
     """Collect interface tests from an interface subdirectory.
 
@@ -308,12 +311,14 @@ def _gather_tests_for_interface(
             )
             continue
         tests[version_dir.name] = gather_test_spec_for_version(
-            version_dir, interface_name, version_n
+            version_dir, interface_name, version_n, tests_dir=tests_dir
         )
     return tests
 
 
-def collect_tests(path: Path, include: str = "*") -> Dict[str, Dict[str, InterfaceTestSpec]]:
+def collect_tests(
+    path: Path, include: str = "*", *, tests_dir: str = _DEFAULT_TESTS_DIR
+) -> Dict[str, Dict[str, InterfaceTestSpec]]:
     """Gather the test cases collected from this path.
 
     Returns a dict structured as follows:
@@ -335,6 +340,8 @@ def collect_tests(path: Path, include: str = "*") -> Dict[str, Dict[str, Interfa
             continue  # skip
         logger.info("collecting tests for interface %s" % interface_dir_name)
         interface_name = interface_dir_name.replace("-", "_")
-        tests[interface_name] = _gather_tests_for_interface(interface_dir, interface_name)
+        tests[interface_name] = _gather_tests_for_interface(
+            interface_dir, interface_name, tests_dir=tests_dir
+        )
 
     return tests
