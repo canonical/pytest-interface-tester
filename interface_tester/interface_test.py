@@ -15,7 +15,7 @@ from ops.testing import CharmType
 from pydantic import ValidationError
 from scenario import Context, Relation, State
 from scenario.context import CharmEvents
-from scenario.state import _DEFAULT_JUJU_DATABAG, _Event, _EventPath
+from scenario.state import _DEFAULT_JUJU_DATABAG, _Event
 
 from interface_tester.errors import InvalidTestCaseError, SchemaValidationError
 
@@ -28,6 +28,14 @@ if typing.TYPE_CHECKING:
     from interface_tester import DataBagSchema
 
 INTF_NAME_AND_VERSION_REGEX = re.compile(r"/interfaces/(\w+)/v(\d+)/")
+
+_RELATION_EVENT_CONSTRUCTORS = {
+    "_relation_changed": CharmEvents.relation_changed,
+    "_relation_departed": CharmEvents.relation_departed,
+    "_relation_broken": CharmEvents.relation_broken,
+    "_relation_joined": CharmEvents.relation_joined,
+    "_relation_created": CharmEvents.relation_created,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -421,23 +429,18 @@ class Tester:
                 f"string or _Event."
             )
 
-        if isinstance(raw_event, str):
-            if raw_event.endswith("-relation-changed"):
-                event = CharmEvents.relation_changed(relation)
-            elif raw_event.endswith("-relation-departed"):
-                event = CharmEvents.relation_departed(relation)
-            elif raw_event.endswith("-relation-broken"):
-                event = CharmEvents.relation_broken(relation)
-            elif raw_event.endswith("-relation-joined"):
-                event = CharmEvents.relation_joined(relation)
-            elif raw_event.endswith("-relation-created"):
-                event = CharmEvents.relation_created(relation)
-            else:
-                raise InvalidTestCaseError(
-                    f"Bad interface test specification: event {raw_event} is not a relation event."
-                )
+        # Juju spells these with dashes, ops with underscores: accept either.
+        name = (raw_event if isinstance(raw_event, str) else raw_event.path).replace("-", "_")
+        for suffix, constructor in _RELATION_EVENT_CONSTRUCTORS.items():
+            if name.endswith(suffix):
+                break
         else:
-            event = raw_event
+            raise InvalidTestCaseError(
+                f"Bad interface test specification: event {raw_event} is not a relation event."
+            )
+
+        if isinstance(raw_event, str):
+            return constructor(relation)
 
         # todo: if the user passes a relation event that is NOT about the relation
         #  interface that this test is about, at this point we are injecting the wrong
@@ -449,9 +452,9 @@ class Tester:
         # next we need to ensure that the event's .relation is our relation, and that the endpoint
         # in the relation and the event path match that of the charm we're testing.
         charm_event = dataclasses.replace(
-            event,
+            raw_event,
             relation=relation,
-            path=relation.endpoint + typing.cast(_EventPath, event.path).suffix,
+            path=relation.endpoint + suffix,
         )
 
         return charm_event
